@@ -72,6 +72,7 @@ def get_wad_repos():
 
 def get_response(name, repos):
     """Returns first response on a valid wad link"""
+    # TODO: Be a generator so can return other links to the wad if any fail
     for filename in (name + ".zip", name + ".pk3", name + ".wad"):
         for repo in repos:
             try:
@@ -90,6 +91,15 @@ def get_response(name, repos):
                 elif hasattr(e, 'code'):
                     log_warning('The server couldn\'t fulfill the request.')
                     log_warning('Error code: ', e.code)
+
+    return None
+
+
+def get_wad(response):
+    """Attempts to get wad from response."""
+    # TODO: .pk3 and .wad should be left in place, zips should be checked for
+    # .wad file of same name, and should extract $name.wad and $name.txt if
+    # applicable. For now, just 'if zip, extract'
 
 
 def log_error(*objs):
