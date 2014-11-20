@@ -21,6 +21,7 @@ from __future__ import print_function
 import argparse
 import os
 import sys
+import textwrap
 import urllib2
 
 
@@ -31,6 +32,17 @@ def main():
                         default=os.getenv('DOOMWADDIR'))
     parser.add_argument('--getlink', help='Return a link to the wad instead', type=bool)
     args = vars(parser.parse_args())
+
+    if not args['waddir']:
+        log_error(textwrap.dedent("""\
+            You need to set $DOOMWADDIR in your environment to a
+            directory where you wish to store PWADs. This also lets
+            Zandronum and other software know where to look.
+
+            Hint: $HOME/.zandromum is bad. Try:
+              $HOME/.zandronum/wads, or
+              $HOME/doom/wads."""))
+        sys.exit(1)
 
     response = get_response(name=args["name"],
                             repos=get_wad_repos())
@@ -47,22 +59,37 @@ def get_wad_repos():
         try:
             repo_list = urllib2.urlopen(url).read()
             if repo_list:
-                break
-        except urllib2.HTTPError:
-            pass
-    return repo_list.split()
+                return repo_list.split()
+        except urllib2.URLError as e:
+            if hasattr(e, 'reason'):
+                log_warning('We failed to reach a server.')
+                log_warning('Reason: ', e.reason)
+            elif hasattr(e, 'code'):
+                log_warning('The server couldn\'t fulfill the request.')
+                log_warning('Error code: ', e.code)
+    return None
 
 
 def get_response(name, repos):
     """Returns first response on a valid wad link"""
     for filename in (name + ".zip", name + ".pk3", name + ".wad"):
         for repo in repos:
-            if "%s" in repo:
-                response = urllib2.urlopen(repo % filename)
-            else:
-                response = urllib2.urlopen(repo + filename)
-            if response.getcode() == 200:
-                return response
+            try:
+                if "%s" in repo:
+                    response = urllib2.urlopen(repo % filename)
+                else:
+                    response = urllib2.urlopen(repo + filename)
+
+                if response.getcode() == 200:
+                    return response
+
+            except urllib2.URLError as e:
+                if hasattr(e, 'reason'):
+                    log_warning('We failed to reach a server.')
+                    log_warning('Reason: ', e.reason)
+                elif hasattr(e, 'code'):
+                    log_warning('The server couldn\'t fulfill the request.')
+                    log_warning('Error code: ', e.code)
 
 
 def log_error(*objs):
