@@ -13,7 +13,6 @@
 
   optionally:
   --waddir=dir (overrides $DOOMWADDIR)
-  --getlink (prints a link to the wad rather than downloading it)
 """
 
 from __future__ import print_function
@@ -23,6 +22,8 @@ import os
 import sys
 import textwrap
 import urllib2
+import zipfile
+import StringIO
 
 
 def main():
@@ -30,7 +31,6 @@ def main():
     parser.add_argument('name', help='The name of the wad')
     parser.add_argument('--waddir', help='Location for wads', type=str,
                         default=os.getenv('DOOMWADDIR'))
-    parser.add_argument('--getlink', help='Return a link to the wad instead', type=bool)
     args = vars(parser.parse_args())
 
     if not args['waddir']:
@@ -44,11 +44,16 @@ def main():
               $HOME/doom/wads."""))
         sys.exit(1)
 
-    response = get_response(name=args["name"],
-                            repos=get_wad_repos())
-
-    get_wad(response, waddir=args["waddir"],
-            links=args["getlink"])
+    wad = get_wad(name=args["name"], repos=get_wad_repos())
+    if not wad:
+        log_error("We couldn't find the WAD file!")
+        sys.exit(1)
+    log('Writing...')
+    filepath = os.path.join(args["waddir"], args["name"] + ".wad")
+    f = open(filepath, 'wb')
+    f.write(wad)
+    f.close()
+    log('WAD file written to %s' % filepath)
 
 
 def get_wad_repos():
@@ -70,11 +75,12 @@ def get_wad_repos():
     return None
 
 
-def get_response(name, repos):
+def get_wad(name, repos):
     """Returns first response on a valid wad link"""
     # TODO: Be a generator so can return other links to the wad if any fail
     for filename in (name + ".zip", name + ".pk3", name + ".wad"):
         for repo in repos:
+            log('Trying %s' % repo)
             try:
                 if "%s" in repo:
                     response = urllib2.urlopen(repo % filename)
@@ -82,7 +88,10 @@ def get_response(name, repos):
                     response = urllib2.urlopen(repo + filename)
 
                 if response.getcode() == 200:
-                    return response
+                    log('Retrieving file...')
+                    wad = get_wad_content(response, name)
+                    if wad:
+                        return wad
 
             except urllib2.URLError as e:
                 if hasattr(e, 'reason'):
@@ -95,11 +104,33 @@ def get_response(name, repos):
     return None
 
 
-def get_wad(response):
-    """Attempts to get wad from response."""
+def get_link(response):
+    """Gets a link from the response"""
+    return response.geturl()
+
+
+def get_wad_content(response, name):
+    """Attempts to get wad content from response"""
     # TODO: .pk3 and .wad should be left in place, zips should be checked for
     # .wad file of same name, and should extract $name.wad and $name.txt if
     # applicable. For now, just 'if zip, extract'
+    filehandle = StringIO.StringIO(response.read())
+
+    if zipfile.is_zipfile(filehandle):
+        log('Extracting WAD from zip file...')
+        archive = zipfile.ZipFile(filehandle, 'r')
+        filenames = [fname for fname in archive.namelist()
+                     if name + '.wad' == fname.lower()]
+        if filenames:
+            wad = archive.read(filenames[0])
+    else:
+        wad = filehandle.read()
+
+    log('Validating...')
+    if wad[1:4] == 'WAD':
+        return wad
+    else:
+        log_warning('Not a WAD file!')
 
 
 def log_error(*objs):
